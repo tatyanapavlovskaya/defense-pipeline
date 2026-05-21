@@ -20,13 +20,13 @@ SHEET_ID = os.getenv("GOOGLE_SHEET_ID", "")
 SPREADSHEET_NAME = "Civitta Defense Outreach"
 
 COMPANY_HEADERS = [
-    "Org Nr", "Company Name", "Source", "Address", "SNI Code",
-    "Website", "Contact Name", "Contact Email", "Contact Found Date", "Notes",
+    "Org Nr", "Company Name", "Source", "Address", "SNI Code", "Website", "Notes",
 ]
 NEWS_HEADERS = [
     "Date", "Company Name", "Org Nr", "News Source", "Headline",
-    "Article URL", "Trigger Keywords Matched", "Pitch Points",
-    "Draft Email", "Status", "Reviewed By", "Review Date",
+    "Article URL", "Trigger Keywords Matched", "Pitch Points", "Draft Email",
+    "Contact Name", "Contact Title", "Contact Email", "Contact Source",
+    "Status", "Reviewed By", "Review Date",
 ]
 KEYWORD_HEADERS = ["Company Names", "Geo & Commercial"]
 
@@ -100,6 +100,31 @@ def get_existing_company_names(companies_ws: gspread.Worksheet) -> set[str]:
     """Return the set of company names already in the Companies tab (column B)."""
     values = companies_ws.col_values(2)  # column B = Company Name
     return {v.strip().lower() for v in values[1:] if v.strip()}  # skip header
+
+
+def get_last_known_contact(news_ws: gspread.Worksheet, company_name: str) -> dict:
+    """
+    Search the News & Drafts tab for the most recent row for this company
+    that has a contact filled in. Returns a dict with name/title/email/source,
+    or empty strings if none found.
+    """
+    rows = news_ws.get_all_values()
+    if len(rows) < 2:
+        return {"name": "", "title": "", "email": "", "source": ""}
+    # NEWS_HEADERS indices: Contact Name=9, Title=10, Email=11, Source=12
+    target = company_name.strip().lower()
+    match = {"name": "", "title": "", "email": "", "source": ""}
+    for row in rows[1:]:
+        if len(row) < 13:
+            continue
+        if row[1].strip().lower() == target and any(row[9:13]):
+            match = {
+                "name":   row[9].strip(),
+                "title":  row[10].strip(),
+                "email":  row[11].strip(),
+                "source": row[12].strip(),
+            }
+    return match
 
 
 def append_companies(companies_ws: gspread.Worksheet, rows: list[list]) -> int:

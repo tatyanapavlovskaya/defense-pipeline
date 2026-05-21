@@ -186,12 +186,88 @@ def _parse_smed_page(soup: BeautifulSoup) -> list[dict]:
 
 def scrape_civilsecurity() -> list[dict]:
     """
-    civilsecurity.se renders member logos via JavaScript — static scraping
-    returns no company names. Skipping for this release.
-    TODO: implement with Playwright for full member list.
+    civilsecurity.se/medlemmar/ renders member logos via JavaScript.
+    Step 1 — Playwright: scroll the page to trigger lazy loading and collect
+             all internal member profile URLs (/medlemmar/<slug>/).
+    Step 2 — requests: fetch each profile page (static HTML) to extract
+             the company name (<h1>) and their external website link.
     """
-    print("  CivilSecurity: JS-rendered member list — skipped (see TODO in code)")
-    return []
+    print("Scraping CivilSecurity (Playwright)...")
+    try:
+        from playwright.sync_api import sync_playwright
+    except ImportError:
+        print("  Playwright not installed. Run: pip install playwright && playwright install chromium")
+        return []
+
+    # ── Step 1: collect member profile URLs ───────────────────────────────────
+    profile_urls = []
+    with sync_playwright() as pw:
+        browser = pw.chromium.launch(headless=True)
+        page = browser.new_page(viewport={"width": 1280, "height": 900})
+        page.goto("https://civilsecurity.se/medlemmar/", wait_until="networkidle", timeout=30000)
+
+        try:
+            page.click("text=Acceptera kakor", timeout=3000)
+            page.wait_for_timeout(400)
+        except Exception:
+            pass
+
+        # Scroll slowly to trigger lazy-loading of logo grid
+        page.evaluate("""
+            async () => {
+                for (let y = 0; y < document.body.scrollHeight; y += 300) {
+                    window.scrollTo(0, y);
+                    await new Promise(r => setTimeout(r, 120));
+                }
+            }
+        """)
+        page.wait_for_timeout(1500)
+
+        # Collect all links to member profile pages
+        seen = set()
+        for link in page.query_selector_all("a[href*='/medlemmar/']"):
+            href = link.get_attribute("href") or ""
+            # Only individual profile pages, not the listing page itself
+            if re.search(r"/medlemmar/[^/]+/$", href) and href not in seen:
+                seen.add(href)
+                profile_urls.append(href)
+
+        browser.close()
+
+    print(f"  Found {len(profile_urls)} member profile pages")
+
+    # ── Step 2: fetch each profile for name + website ─────────────────────────
+    companies = []
+    for url in profile_urls:
+        try:
+            r = requests.get(url, headers=HEADERS, timeout=10)
+            if r.status_code != 200:
+                continue
+            soup = BeautifulSoup(r.text, "html.parser")
+
+            # Company name from <h1>
+            h1 = soup.find("h1")
+            name = h1.get_text(strip=True) if h1 else ""
+            if not name:
+                continue
+
+            # Website: first external link that isn't civilsecurity.se or social
+            website = ""
+            for a in soup.find_all("a", href=True):
+                href = a["href"]
+                if (href.startswith("http") and
+                        "civilsecurity.se" not in href and
+                        not any(s in href for s in ["linkedin", "facebook",
+                                                     "twitter", "instagram"])):
+                    website = href
+                    break
+
+            companies.append({"name": name, "source": "CivilSecurity", "website": website})
+        except Exception:
+            continue
+
+    print(f"  CivilSecurity: {len(companies)} companies")
+    return companies
 
 
 # ── Google Sheets writer ──────────────────────────────────────────────────────
@@ -199,8 +275,7 @@ def scrape_civilsecurity() -> list[dict]:
 def companies_to_rows(companies: list[dict]) -> list[list]:
     """
     Convert company dicts to sheet rows matching Companies tab headers:
-    Org Nr | Company Name | Source | Address | SNI Code |
-    Website | Contact Name | Contact Email | Contact Found Date | Notes
+    Org Nr | Company Name | Source | Address | SNI Code | Website | Notes
     """
     rows = []
     for c in companies:
@@ -208,16 +283,13 @@ def companies_to_rows(companies: list[dict]) -> list[list]:
         if c.get("city"):
             address = f"{address}, {c['city']}".strip(", ")
         rows.append([
-            "",               # Org Nr (to be filled by Bolagsverket later)
+            "",                      # Org Nr (Bolagsverket enrichment later)
             c["name"],
             c.get("source", ""),
             address,
-            "",               # SNI Code
+            "",                      # SNI Code
             c.get("website", ""),
-            "",               # Contact Name
-            "",               # Contact Email
-            "",               # Contact Found Date
-            "",               # Notes
+            "",                      # Notes
         ])
     return rows
 
