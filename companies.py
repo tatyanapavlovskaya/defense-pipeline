@@ -107,11 +107,13 @@ def scrape_smed() -> list[dict]:
     companies = []
     page = 1
 
+    # Use the no-language-prefix URL so company names are not auto-translated.
+    # /en/medlemmar/ runs TranslatePress and turns "Stigen" into "The path", etc.
     while True:
         url = (
-            "https://sme-d.se/en/medlemmar/"
+            "https://sme-d.se/medlemmar/"
             if page == 1
-            else f"https://sme-d.se/en/medlemmar/page/{page}/"
+            else f"https://sme-d.se/medlemmar/page/{page}/"
         )
         r = requests.get(url, headers=HEADERS, timeout=15)
         if r.status_code == 404:
@@ -119,14 +121,11 @@ def scrape_smed() -> list[dict]:
         r.raise_for_status()
         soup = BeautifulSoup(r.text, "html.parser")
 
-        # Each member card is a block containing an <h3> with the company name
-        # followed by address fields and a website link
         cards = _parse_smed_page(soup)
         if not cards:
             break
         companies.extend(cards)
 
-        # Check if there's a next page
         pag = soup.find("nav", class_=re.compile("paginat", re.I))
         has_next = False
         if pag:
