@@ -26,7 +26,7 @@ NEWS_HEADERS = [
     "Date", "Company Name", "Org Nr", "News Source", "Headline",
     "Article URL", "Trigger Keywords Matched", "Pitch Points", "Draft Email",
     "Contact Name", "Contact Title", "Contact Email", "Contact Source",
-    "Status", "Reviewed By", "Review Date",
+    "Status",
 ]
 KEYWORD_HEADERS = ["Company Names", "Geo & Commercial"]
 
@@ -69,12 +69,14 @@ def ensure_tabs(sh: gspread.Spreadsheet) -> dict[str, gspread.Worksheet]:
                 ws = sh.add_worksheet(title=title, rows=1000, cols=len(headers))
             print(f"  Created tab: {title}")
 
-        # Write headers if row 1 is empty
+        # Write headers if row 1 doesn't already match exactly.
+        # Clear the full row first so stale extra columns don't linger.
         first_row = ws.row_values(1)
-        if not first_row:
-            ws.append_row(headers, value_input_option="RAW")
+        if first_row != headers:
+            ws.delete_rows(1)
+            ws.insert_rows([headers], row=1)
             _format_header_row(ws)
-            print(f"  Headers written: {title}")
+            print(f"  Headers updated: {title}")
 
         tabs[title] = ws
 
