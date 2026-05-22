@@ -20,7 +20,8 @@ SHEET_ID = os.getenv("GOOGLE_SHEET_ID", "")
 SPREADSHEET_NAME = "Civitta Defense Outreach"
 
 COMPANY_HEADERS = [
-    "Org Nr", "Company Name", "Source", "Address", "SNI Code", "Website", "Notes",
+    "Org Nr", "Company Name", "Source", "Address", "SNI Code", "Website",
+    "Employees", "Revenue (kSEK)",
 ]
 NEWS_HEADERS = [
     "Date", "Company Name", "Org Nr", "News Source", "Headline",
