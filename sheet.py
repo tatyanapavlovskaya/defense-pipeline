@@ -28,7 +28,7 @@ NEWS_HEADERS = [
     "Contact Name", "Contact Title", "Contact Email", "Contact Source",
     "Status",
 ]
-KEYWORD_HEADERS = ["Company Names", "Geo & Commercial"]
+KEYWORD_HEADERS = ["Company Names", "Geo & Commercial (SV)", "Geo & Commercial (EN)"]
 
 TAB_CONFIGS = [
     ("Companies",     COMPANY_HEADERS),
@@ -127,6 +127,76 @@ def get_last_known_contact(news_ws: gspread.Worksheet, company_name: str) -> dic
                 "source": row[12].strip(),
             }
     return match
+
+
+def sync_company_keywords(companies_ws: gspread.Worksheet,
+                          keywords_ws: gspread.Worksheet) -> int:
+    """
+    Sync company names from the Companies tab into column A of the Keywords tab.
+    Only appends names not already present — never removes or overwrites.
+    Returns the number of new names added.
+    """
+    # All company names from Companies tab (col B)
+    all_company_names = [
+        v.strip() for v in companies_ws.col_values(2)[1:] if v.strip()
+    ]
+    # Already in Keywords tab col A
+    existing = {
+        v.strip().lower()
+        for v in keywords_ws.col_values(1)[1:] if v.strip()
+    }
+    new_names = [n for n in all_company_names if n.strip().lower() not in existing]
+    if not new_names:
+        return 0
+
+    # Find the first empty cell in col A after existing data
+    col_a = keywords_ws.col_values(1)  # includes header
+    next_row = len(col_a) + 1
+
+    keywords_ws.update(
+        values=[[n] for n in new_names],
+        range_name=f"A{next_row}:A{next_row + len(new_names) - 1}",
+    )
+    return len(new_names)
+
+
+def read_keywords(keywords_ws: gspread.Worksheet) -> dict:
+    """
+    Read all three keyword columns from the Keywords tab.
+    Returns:
+        {
+          "company_names": [...],   # Filter 1
+          "geo_commercial_sv": [...],  # Filter 2 — Swedish
+          "geo_commercial_en": [...],  # Filter 2 — English
+        }
+    All values are stripped and lowercased for matching.
+    """
+    rows = keywords_ws.get_all_values()
+    data = rows[1:]  # skip header
+
+    def col(i):
+        return [r[i].strip().lower() for r in data
+                if len(r) > i and r[i].strip()]
+
+    return {
+        "company_names":     col(0),
+        "geo_commercial_sv": col(1),
+        "geo_commercial_en": col(2),
+    }
+
+
+def append_news_rows(news_ws: gspread.Worksheet, rows: list[list]) -> int:
+    """Append rows to the News & Drafts tab. Returns count added."""
+    if not rows:
+        return 0
+    news_ws.append_rows(rows, value_input_option="USER_ENTERED")
+    return len(rows)
+
+
+def get_existing_article_urls(news_ws: gspread.Worksheet) -> set[str]:
+    """Return URLs already recorded in the News & Drafts tab (column F)."""
+    values = news_ws.col_values(6)  # column F = Article URL
+    return {v.strip() for v in values[1:] if v.strip()}
 
 
 def append_companies(companies_ws: gspread.Worksheet, rows: list[list]) -> int:
