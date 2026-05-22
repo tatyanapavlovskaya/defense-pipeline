@@ -16,6 +16,7 @@ import sys
 import os
 import time
 import argparse
+import html as html_mod
 import requests
 from bs4 import BeautifulSoup
 from dotenv import load_dotenv
@@ -46,11 +47,29 @@ COL_REV      = COMPANY_HEADERS.index("Revenue (kSEK)")
 NUM_COLS     = len(COMPANY_HEADERS)        # 8
 
 
+def _clean_for_search(name: str) -> str:
+    """
+    Decode HTML entities, strip parenthetical and dash-separated suffixes
+    so the core company name reaches allabolag.se cleanly.
+    e.g. "B&amp;G Nordic AB"              → "B&G Nordic AB"
+         "FLIR Systems AB &#8211; Surv…"  → "FLIR Systems AB"
+         "4C Group AB (4C Strategies)"    → "4C Group AB"
+         "Swedish Space Corporation, SSC" → "Swedish Space Corporation"
+    """
+    name = html_mod.unescape(name)
+    name = re.sub(r"\s*\(.*?\)\s*$", "", name).strip()           # strip (...)
+    name = re.sub(r"\s*[–—-]\s*\S.*$", "", name).strip()         # strip – suffix
+    name = re.sub(r",\s*\S+\s*$", "", name).strip()              # strip , SSC style
+    name = re.sub(r"\s*&\s*", " and ", name)                     # & → and (allabolag spells it out)
+    return name
+
+
 def _search(name: str) -> list[str]:
     """Return up to 3 allabolag.se /foretag/ paths for a company name."""
+    search_name = _clean_for_search(name)
     try:
         r = requests.get(
-            f"{BASE}/what/{requests.utils.quote(name)}",
+            f"{BASE}/what/{requests.utils.quote(search_name)}",
             headers=_HEADERS, timeout=12, allow_redirects=True,
         )
         soup = BeautifulSoup(r.text, "lxml")
@@ -168,12 +187,10 @@ def run_enrichment(force: bool = False, limit: int = 0) -> None:
         if result.get("address") and not row[COL_ADDRESS]:
             row[COL_ADDRESS] = result["address"]
             changed = True
-        if result.get("employees"):
-            row[COL_EMPL] = result["employees"]
-            changed = True
-        if result.get("revenue"):
-            row[COL_REV] = result["revenue"]
-            changed = True
+        # Always overwrite employees/revenue — clears any stale values from old runs
+        row[COL_EMPL] = result.get("employees", "")
+        row[COL_REV]  = result.get("revenue", "")
+        changed = True
 
         if changed:
             sheet_row = row_i + 2   # 1-indexed; row 1 = header
