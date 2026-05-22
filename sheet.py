@@ -86,9 +86,11 @@ def ensure_tabs(sh: gspread.Spreadsheet) -> dict[str, gspread.Worksheet]:
 
 def _format_header_row(ws: gspread.Worksheet):
     ws.format("1:1", {
-        "textFormat": {"bold": True},
-        "backgroundColor": {"red": 0.18, "green": 0.33, "blue": 0.59},
-        "textFormat": {"bold": True, "foregroundColor": {"red": 1, "green": 1, "blue": 1}},
+        "backgroundColor": {"red": 1, "green": 1, "blue": 1},
+        "textFormat": {
+            "bold": True,
+            "foregroundColor": {"red": 0, "green": 0, "blue": 0},
+        },
     })
 
 
